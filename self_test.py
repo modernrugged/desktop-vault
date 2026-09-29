@@ -162,6 +162,17 @@ def ui_checks(work: str) -> None:
         dialogs.SaveBackDialog(root, []).show()
         dialogs.SaveCloseDialog(root, "notes.txt").show()
         dialogs.ExternalOpenDialog(root, "report.docx").show()
+        dialogs.SetPasswordDialog(root, "Personal").show()
+        dialogs.RecoverySetupDialog(root, None, "Personal").show()
+        dialogs.RecoverySetupDialog(
+            root, {"threshold": 2, "shares": 3, "created": 1790000000},
+            "Personal").show()
+        dialogs.RecoveryShowDialog(root, ["ABCD-EFGH", "JKMN-PQRS"], 2,
+                                   "Personal").show()
+        dialogs.RecoveryUnlockDialog(root, 2, 3).show()
+        dialogs.ConflictDialog(root, "a.txt", "Personal", False,
+                               {"size": "1 KB", "modified": "today"},
+                               {"size": "2 KB", "modified": "today"}, 1).show()
         ok, value = dialogs.run_task(root, "Working", lambda r, c: 42, False)
         check("every dialog builds and the task runner returns its result",
               ok and value == 42)
@@ -533,6 +544,99 @@ def ui_checks(work: str) -> None:
               os.path.isfile(pending))
         app.workspace.close_all()
         third.lock()
+
+        # ---- the recovery flow, driven through the real screens ----------
+        captured = {}
+
+        class FakeSetup:
+            def __init__(self, parent, existing, vault_name=""):
+                captured["existing"] = existing
+
+            @staticmethod
+            def show():
+                return {"action": "create", "threshold": 2, "count": 3,
+                        "password": "a reasonably long passphrase"}
+
+        class FakeShow:
+            def __init__(self, parent, shares, threshold, vault_name=""):
+                captured["shares"] = list(shares)
+                captured["threshold"] = threshold
+
+            @staticmethod
+            def show():
+                return True
+
+        class FakeUnlock:
+            def __init__(self, parent, threshold, count):
+                captured["asked"] = (threshold, count)
+
+            @staticmethod
+            def show():
+                return captured["shares"][:2]
+
+        class FakeSetPassword:
+            def __init__(self, parent, vault_name=""):
+                pass
+
+            @staticmethod
+            def show():
+                return "the password chosen after recovery"
+
+        saved_dialogs = (dialogs.RecoverySetupDialog,
+                         dialogs.RecoveryShowDialog,
+                         dialogs.RecoveryUnlockDialog,
+                         dialogs.SetPasswordDialog)
+        dialogs.RecoverySetupDialog = FakeSetup
+        dialogs.RecoveryShowDialog = FakeShow
+        dialogs.RecoveryUnlockDialog = FakeUnlock
+        dialogs.SetPasswordDialog = FakeSetPassword
+        try:
+            fresh = Vault(primary)
+            fresh.unlock("a reasonably long passphrase")
+            # Its own file: earlier checks deliberately rewrite the shared one.
+            fresh.create_text_file([], "recovery-probe.txt",
+                                   b"readable after recovery\n")
+            app.show_browser(fresh)
+            app.update()
+            app.screen.manage_recovery()
+            app.update()
+            check("the setup dialog is told there is no split yet",
+                  captured.get("existing") is None)
+            check("creating a split through the menu issues three shares",
+                  len(captured.get("shares", [])) == 3
+                  and captured.get("threshold") == 2)
+            check("the vault now reports a recovery split",
+                  fresh.has_recovery())
+            app.screen.switch_vault()
+            app.update()
+
+            app.open_vault(primary)
+            app.update()
+            check("the unlock screen offers recovery when a split exists",
+                  isinstance(app.screen, UnlockScreen)
+                  and app.screen.vault.has_recovery())
+            app.screen.use_recovery()
+            app.update()
+            check("the unlock dialog is told the split's shape",
+                  captured.get("asked") == (2, 3), str(captured.get("asked")))
+            check("recovery shares open the vault and land in the browser",
+                  isinstance(app.screen, BrowserScreen)
+                  and app.vault is not None and app.vault.is_unlocked)
+            check("a file stored before recovery is readable after it",
+                  app.vault.read_bytes(["recovery-probe.txt"])
+                  == b"readable after recovery\n")
+
+            app.screen.switch_vault()
+            app.update()
+            reopened = Vault(primary)
+            reopened.unlock("the password chosen after recovery")
+            check("the password set during recovery works on the next open",
+                  reopened.is_unlocked)
+            reopened.lock()
+        finally:
+            (dialogs.RecoverySetupDialog, dialogs.RecoveryShowDialog,
+             dialogs.RecoveryUnlockDialog,
+             dialogs.SetPasswordDialog) = saved_dialogs
     except Exception as exc:
         check("the create-a-vault flow completes", False,
               "%s: %s" % (type(exc).__name__, exc))
@@ -938,6 +1042,148 @@ def main() -> int:
             check("the customisation can be removed again",
                   shell.clear_folder_icon(deco)
                   and not os.path.exists(os.path.join(deco, "desktop.ini")))
+
+        section("Secret sharing")
+        import itertools
+        from vaultlib import shamir
+
+        check("GF(256) log and exp are inverse",
+              all(shamir._EXP[shamir._LOG[a]] == a for a in range(1, 256)))
+        check("division undoes multiplication in the field",
+              all(shamir._div(shamir._mul(a, b), b) == a
+                  for a in range(0, 256, 5) for b in range(1, 256, 7)))
+
+        secret = crypto.random_bytes(32)
+        every_subset = True
+        for threshold, count in ((2, 3), (3, 5), (2, 2), (5, 5), (2, 15)):
+            parts = shamir.split(secret, threshold, count)
+            for subset in itertools.combinations(parts, threshold):
+                if shamir.combine(list(subset)) != secret:
+                    every_subset = False
+        check("every threshold-sized subset reconstructs the secret",
+              every_subset)
+
+        parts = shamir.split(secret, 3, 5)
+        check("more shares than the threshold still work",
+              shamir.combine(parts[:4]) == secret)
+        check("fewer than the threshold never reconstructs",
+              all(shamir.combine(list(s)) != secret
+                  for s in itertools.combinations(parts, 2)))
+        check("one share of a fixed secret differs every split",
+              len({shamir.split(b"AAAA", 3, 5)[0][1]
+                   for _ in range(120)}) > 110)
+
+        vault_id = crypto.random_bytes(16)
+        texts = [shamir.encode_share(i, d, 2, vault_id)
+                 for i, d in shamir.split(secret, 2, 3)]
+        check("shares survive the written form",
+              shamir.combine([shamir.decode_share(t, vault_id)[:2]
+                              for t in texts[:2]]) == secret)
+        check("lowercase, spaces and missing dashes are accepted",
+              shamir.decode_share(texts[0].lower().replace("-", " "),
+                                  vault_id)[:2]
+              == shamir.decode_share(texts[0], vault_id)[:2])
+        check("look-alike letters are corrected",
+              shamir.decode_share(texts[0].replace("1", "I").replace("0", "O"),
+                                  vault_id)[:2]
+              == shamir.decode_share(texts[0], vault_id)[:2])
+
+        def share_error(fn, needle=""):
+            try:
+                fn()
+                return False
+            except shamir.ShareError as exc:
+                return needle.lower() in str(exc).lower()
+
+        typo = texts[0][:-1] + ("Z" if texts[0][-1] != "Z" else "Y")
+        check("a single mistyped character is caught",
+              share_error(lambda: shamir.decode_share(typo, vault_id),
+                          "mistyped"))
+        check("a share from another vault is caught",
+              share_error(lambda: shamir.decode_share(
+                  texts[0], crypto.random_bytes(16)), "different vault"))
+
+        section("Recovery shares")
+        rec_path = os.path.join(work, "Recover.locker")
+        rec = Vault.create(rec_path, PASSWORD, FAST)
+        rec.add_file([], note)
+        rec.lock()
+        check("a new vault has no recovery block", not Vault(rec_path).has_recovery())
+
+        rec = Vault(rec_path)
+        issued = rec.create_recovery(PASSWORD, 2, 3)
+        check("a split produces the requested number of shares", len(issued) == 3)
+        meta = rec.recovery_info()
+        check("the split is described in metadata",
+              meta["threshold"] == 2 and meta["shares"] == 3, str(meta))
+        try:
+            rec.create_recovery("not the password", 2, 3)
+            check("creating a split needs the password", False)
+        except BadPassword:
+            check("creating a split needs the password", True)
+
+        opened_all = True
+        for pair in itertools.combinations(issued, 2):
+            probe = Vault(rec_path)
+            probe.unlock_with_shares(list(pair))
+            if probe.read_bytes(["note.txt"]) != b"top secret memo\n":
+                opened_all = False
+            probe.lock()
+        check("any two of the three shares open the vault and read a file",
+              opened_all)
+
+        check("one share alone is refused, and says how many more are needed",
+              share_error(lambda: Vault(rec_path).unlock_with_shares(issued[:1]),
+                          "1 more needed"))
+        check("the same share twice is refused",
+              share_error(lambda: Vault(rec_path).unlock_with_shares(
+                  [issued[0], issued[0]]), "twice"))
+
+        stranger = Vault.create(os.path.join(work, "Stranger.locker"),
+                                PASSWORD, FAST)
+        stranger_shares = stranger.create_recovery(PASSWORD, 2, 3)
+        stranger.lock()
+        check("shares from a different vault are refused",
+              share_error(lambda: Vault(rec_path).unlock_with_shares(
+                  stranger_shares[:2]), "different vault"))
+
+        rec = Vault(rec_path)
+        rec.change_password(PASSWORD, "an entirely different passphrase",
+                            recalibrate=False)
+        probe = Vault(rec_path)
+        probe.unlock_with_shares(issued[:2])
+        check("shares keep working after the password changes",
+              probe.read_bytes(["note.txt"]) == b"top secret memo\n")
+
+        probe.set_password("chosen after recovery", recalibrate=False)
+        probe.lock()
+        after = Vault(rec_path)
+        after.unlock("chosen after recovery")
+        check("a password set after recovery opens the vault", after.is_unlocked)
+        after.lock()
+        try:
+            Vault(rec_path).unlock("an entirely different passphrase")
+            check("the superseded password stops working", False)
+        except BadPassword:
+            check("the superseded password stops working", True)
+
+        check("the recovery file holds no readable key material",
+              b"chosen after recovery" not in
+              open(os.path.join(rec_path, "recovery.enc"), "rb").read())
+
+        revoker = Vault(rec_path)
+        check("revoking removes the recovery block",
+              revoker.revoke_recovery() and not revoker.has_recovery())
+        try:
+            Vault(rec_path).unlock_with_shares(issued[:2])
+            check("revoked shares no longer open anything", False)
+        except VaultError as exc:
+            check("revoked shares no longer open anything",
+                  "no recovery" in str(exc).lower(), str(exc))
+        survivor = Vault(rec_path)
+        survivor.unlock("chosen after recovery")
+        check("the password still works after revoking", survivor.is_unlocked)
+        survivor.lock()
 
         section("Display scaling")
         from vaultlib import theme as _theme

@@ -11,6 +11,7 @@ from tkinter import filedialog, ttk
 from . import dialogs, editor, icons, shell, theme
 from .crypto import CryptoError
 from .session import Settings, Workspace
+from .shamir import ShareError
 from .store import (VAULT_SUFFIX, BadPassword, Vault, VaultError, is_dir,
                     list_vaults, move_vault, sanitize)
 from .strength import estimate
@@ -587,6 +588,11 @@ class UnlockScreen(ttk.Frame):
         ttk.Button(buttons, text="Back", command=app.show_start).pack(
             side="left", padx=(10, 0))
 
+        if vault.has_recovery():
+            ttk.Button(wrap, text="Use recovery shares instead",
+                       style="Link.TButton", command=self.use_recovery).pack(
+                pady=(14, 0))
+
     # ------------------------------------------------------------- attempts --
 
     def attempt(self):
@@ -653,6 +659,43 @@ class UnlockScreen(ttk.Frame):
                 self.status.configure(text="Incorrect password.")
         else:
             self.status.configure(text=str(error) or "Could not open the vault.")
+
+    def use_recovery(self):
+        """Open the vault from shares, then offer to reset the password."""
+        info = self.vault.recovery_info()
+        if not info:
+            dialogs.error(self.app, "No recovery shares",
+                          "This vault does not have a recovery split.")
+            return
+        shares = dialogs.RecoveryUnlockDialog(
+            self.app, info["threshold"], info["shares"]).show()
+        if not shares:
+            return
+        try:
+            self.vault.unlock_with_shares(shares)
+        except (ShareError, VaultError) as exc:
+            dialogs.error(self.app, "Could not unlock", str(exc))
+            return
+
+        new_password = dialogs.SetPasswordDialog(
+            self.app, self.vault.name).show()
+        if new_password:
+            try:
+                self.vault.set_password(new_password)
+                dialogs.info(self.app, "Password set",
+                             "This vault now opens with the new password.",
+                             "Your recovery shares are unchanged and still "
+                             "work.", kind="ok")
+            except VaultError as exc:
+                dialogs.error(self.app, "Password not changed", str(exc))
+        else:
+            dialogs.info(
+                self.app, "Password left as it was",
+                "The vault is open, but the old password is still the one it "
+                "expects.",
+                "Set a new one from Vault > Change password whenever you are "
+                "ready.", kind="warn")
+        self.app.show_browser(self.vault)
 
     def _countdown(self):
         remaining = self.locked_until - time.time()
@@ -1043,6 +1086,8 @@ class BrowserScreen(ttk.Frame):
         self.vault_menu.add_separator()
         self.vault_menu.add_command(label="Change password...",
                                     command=self.change_password)
+        self.vault_menu.add_command(label="Recovery shares...",
+                                    command=self.manage_recovery)
         self.vault_menu.add_command(label="Settings...",
                                     command=self.open_settings)
         self.vault_menu.add_separator()
@@ -2012,6 +2057,44 @@ class BrowserScreen(ttk.Frame):
         ]
         dialogs.info(self.app, "About this vault", "", "\n".join(lines),
                      mono=True)
+
+    def manage_recovery(self):
+        """Create, replace or revoke this vault's recovery split."""
+        existing = self.vault.recovery_info()
+        answer = dialogs.RecoverySetupDialog(
+            self.app, existing, self.vault.name).show()
+        if not answer:
+            return
+
+        if answer["action"] == "revoke":
+            if not dialogs.confirm(
+                    self.app, "Revoke recovery shares?",
+                    "Every existing share stops working immediately.",
+                    "The password becomes the only way into this vault "
+                    "again. This cannot be undone.",
+                    confirm_text="Revoke"):
+                return
+            if self.vault.revoke_recovery():
+                dialogs.info(self.app, "Shares revoked",
+                             "The recovery block has been shredded.",
+                             "Those shares are now worthless.", kind="ok")
+            else:
+                dialogs.error(self.app, "Nothing to revoke",
+                              "This vault has no recovery shares.")
+            return
+
+        def worker(report, _cancel):
+            report(text="Splitting a new recovery secret...")
+            return self.vault.create_recovery(
+                answer["password"], answer["threshold"], answer["count"])
+
+        ok, result = dialogs.run_task(self.app, "Creating recovery shares",
+                                      worker, cancellable=False)
+        if not ok:
+            dialogs.error(self.app, "Shares were not created", str(result))
+            return
+        dialogs.RecoveryShowDialog(self.app, result, answer["threshold"],
+                                   self.vault.name).show()
 
     def open_settings(self):
         if dialogs.SettingsDialog(self.app, self.app.settings).show():

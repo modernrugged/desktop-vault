@@ -77,6 +77,7 @@ installer for Windows).
 | Lock up | *Lock now*, `Ctrl+L`, or wait for the idle timer |
 | Switch vaults | *Vault ▾ → Switch to → ‹name›*, or *Lock and show all vaults* |
 | Change password | *Vault ▾ → Change password…* — instant, whatever the size |
+| Set up recovery | *Vault ▾ → Recovery shares…* — off by default, see below |
 | Check nothing rotted | *Vault ▾ → Check vault integrity* |
 | See the crypto in use | *Vault ▾ → About this vault* |
 
@@ -267,8 +268,60 @@ line endings surviving a round trip; moving vaults between folders without
 losing or overwriting anything; and a live pass that builds every dialog and
 runs the whole create-a-vault flow, imports by drag-and-drop, edits a file in
 the editor, switches between vaults, resolves name clashes every way the
-prompt offers, and confirms the idle auto-lock never shreds a document another
-program still has open.
+prompt offers, exercises Shamir splitting exhaustively (every threshold-sized
+subset of five configurations reconstructs, and no smaller subset does), and
+confirms the idle auto-lock never shreds a document another program still has
+open.
+
+---
+
+## Recovery shares
+
+**Off by default.** A vault with no recovery split has exactly one way in: the
+password. That is the safest arrangement and it stays the default.
+
+If losing the password would be a disaster, *Vault ▾ → Recovery shares…*
+splits a second key into several pieces using **Shamir secret sharing**. You
+pick the shape — 3 shares of which any 2 open the vault, 5 of which any 3, up
+to 15. Fewer than the threshold reveal **nothing**: that is a property of the
+maths, not a matter of difficulty. Hold one share of a 2-of-3 split and every
+possible key remains exactly as likely as before you had it.
+
+![setting up a split](docs/recovery-setup.png)
+
+Shares are shown once, never stored by the app, and look like this:
+
+```
+04GJ-HA0F-9HD4-XC7M-K0FP-59BA-1ZJX-S11K-T230-0F0K-ZGGY-V9PK-E32N-RN45-GQBC-MC9E
+```
+
+They use Crockford Base32, which omits I, L, O and U so a handwritten share
+cannot be misread, and each one carries a checksum plus a vault fingerprint —
+a mistyped character or a share from the wrong vault is rejected with a clear
+reason instead of an authentication failure.
+
+![the issued shares](docs/recovery-shares.png)
+
+To use them, choose **Use recovery shares instead** on the password prompt and
+enter any *threshold* of them, one per line. Dashes, spaces and capitalisation
+do not matter. You are then invited to set a new password.
+
+**What to understand before turning this on:**
+
+- Enough shares together are a **complete second key**. They open the vault
+  without the password, and without Argon2 slowing anyone down.
+- So keep them apart — different people, different buildings. Three shares in
+  one drawer is just a password written down, with extra steps.
+- Changing your password does **not** invalidate the shares; they wrap the
+  master key, not the password. *Revoke* from the same menu is what kills them,
+  and it shreds the recovery block on disk.
+- Creating or replacing a split requires the current password.
+- The split lives in `recovery.enc` beside `vault.json`. Delete that file and
+  the shares become worthless — which is a perfectly good manual revoke.
+
+A 2-of-3 split works well for inheritance: one share with you, one with family,
+one with a solicitor. No single holder can open the vault alone, and no single
+loss locks you out.
 
 ---
 

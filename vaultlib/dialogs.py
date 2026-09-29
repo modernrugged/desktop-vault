@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import queue
 import threading
+import time
 import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Optional
@@ -272,6 +273,362 @@ class ExternalOpenDialog(_Modal):
 
     def _accept(self):
         self.result = {"open": True, "dont_ask": bool(self.dont_ask.get())}
+        self.destroy()
+
+
+class SetPasswordDialog(_Modal):
+    """Choose a new password without knowing the old one.
+
+    Only reachable after unlocking with recovery shares, which is proof
+    enough on its own.
+    """
+
+    def __init__(self, parent, vault_name: str = ""):
+        super().__init__(parent, "Set a new password", 480, 396)
+        body = ttk.Frame(self, padding=theme.px(26))
+        body.pack(fill="both", expand=True)
+
+        ttk.Label(body, text="Set a new password", style="H2.TLabel").pack(
+            anchor="w")
+        ttk.Label(body, style="Muted.TLabel", wraplength=theme.px(420),
+                  justify="left",
+                  text="%s was opened with recovery shares, so the old "
+                       "password is presumed lost. Your shares keep working "
+                       "either way." % (vault_name or "This vault")).pack(
+            anchor="w", pady=(6, 18))
+
+        ttk.Label(body, text="New password", style="Muted.TLabel").pack(anchor="w")
+        self.new_var = tk.StringVar()
+        self.new_var.trace_add("write", lambda *_: self._rate())
+        self.new = PasswordEntry(body, textvariable=self.new_var)
+        self.new.pack(fill="x", pady=(4, 6))
+
+        self.meter = ttk.Progressbar(body, maximum=5, length=theme.px(340),
+                                     style="Strength.Horizontal.TProgressbar")
+        self.meter.pack(fill="x")
+        self.rating = ttk.Label(body, text=" ", style="Muted.TLabel",
+                                wraplength=theme.px(420), justify="left")
+        self.rating.pack(anchor="w", pady=(4, 12))
+
+        ttk.Label(body, text="Confirm", style="Muted.TLabel").pack(anchor="w")
+        self.confirm = PasswordEntry(body)
+        self.confirm.pack(fill="x", pady=(4, 10))
+        self.confirm.bind_return(lambda _e: self._accept())
+
+        self.err = ttk.Label(body, text="", style="Danger.TLabel",
+                             wraplength=theme.px(420))
+        self.err.pack(anchor="w")
+
+        row = ttk.Frame(body)
+        row.pack(fill="x", side="bottom")
+        ttk.Button(row, text="Set password", style="Accent.TButton",
+                   command=self._accept).pack(side="right")
+        ttk.Button(row, text="Not now", command=self._on_close).pack(
+            side="right", padx=(0, 8))
+        self.new.focus_set()
+
+    def _rate(self):
+        result = estimate(self.new_var.get())
+        self.meter.configure(value=result["score"] + (1 if result["bits"] else 0))
+        text = result["label"]
+        if result["hint"]:
+            text += " - " + result["hint"]
+        self.rating.configure(text=text or " ",
+                              foreground=result["colour"] if text else theme.MUTED)
+
+    def _accept(self):
+        if len(self.new.get()) < 8:
+            self.err.configure(text="Use at least 8 characters.")
+            return
+        if self.new.get() != self.confirm.get():
+            self.err.configure(text="The passwords do not match.")
+            return
+        self.result = self.new.get()
+        self.destroy()
+
+
+class RecoverySetupDialog(_Modal):
+    """Create, replace or revoke a Shamir recovery split."""
+
+    def __init__(self, parent, existing: dict = None, vault_name: str = ""):
+        super().__init__(parent, "Recovery shares", 580,
+                         596 if existing else 552)
+        self.existing = existing
+        body = ttk.Frame(self, padding=theme.px(26))
+        body.pack(fill="both", expand=True)
+
+        ttk.Label(body, text="Recovery shares", style="H2.TLabel").pack(anchor="w")
+        ttk.Label(body, wraplength=theme.px(510), justify="left",
+                  style="Muted.TLabel",
+                  text="A way back into %s if the password is lost. The vault "
+                       "is split into shares, and a set number of them "
+                       "together can open it. Any fewer reveal nothing at all."
+                       % (vault_name or "this vault")).pack(anchor="w",
+                                                            pady=(6, 14))
+
+        if existing:
+            current = ttk.Frame(body, style="Panel.TFrame",
+                                padding=theme.px(14))
+            current.pack(fill="x", pady=(0, 14))
+            ttk.Label(current, style="Panel.TLabel", font=theme.FONT_BOLD,
+                      text="This vault has a %d-of-%d split."
+                           % (existing["threshold"], existing["shares"])).pack(
+                anchor="w")
+            when = time.strftime("%d %b %Y",
+                                 time.localtime(existing["created"])) \
+                if existing.get("created") else "an earlier date"
+            ttk.Label(current, style="PanelMuted.TLabel", wraplength=theme.px(480),
+                      justify="left",
+                      text="Created %s. Making a new split replaces it, and "
+                           "the old shares stop working immediately." % when
+                      ).pack(anchor="w", pady=(4, 0))
+
+        grid = ttk.Frame(body)
+        grid.pack(fill="x")
+        ttk.Label(grid, text="Split into", style="TLabel").grid(
+            row=0, column=0, sticky="w")
+        self.count = tk.StringVar(value="3")
+        count_box = ttk.Combobox(grid, textvariable=self.count, width=5,
+                                 state="readonly",
+                                 values=[str(n) for n in range(2, 16)])
+        count_box.grid(row=0, column=1, padx=(10, 6))
+        ttk.Label(grid, text="shares,   any", style="TLabel").grid(
+            row=0, column=2, sticky="w")
+        self.threshold = tk.StringVar(value="2")
+        self.threshold_box = ttk.Combobox(grid, textvariable=self.threshold,
+                                          width=5, state="readonly")
+        self.threshold_box.grid(row=0, column=3, padx=(10, 6))
+        ttk.Label(grid, text="of which can open it", style="TLabel").grid(
+            row=0, column=4, sticky="w")
+        count_box.bind("<<ComboboxSelected>>", lambda _e: self._sync())
+
+        self.summary = ttk.Label(body, style="Accent.TLabel",
+                                 wraplength=theme.px(510), justify="left")
+        self.summary.pack(anchor="w", pady=(10, 0))
+        self.threshold_box.bind("<<ComboboxSelected>>",
+                                lambda _e: self._describe())
+        # After summary exists: _sync() describes the split through it.
+        self._sync()
+
+        warn = ttk.Frame(body, style="Panel.TFrame", padding=theme.px(14))
+        warn.pack(fill="x", pady=(14, 0))
+        ttk.Label(warn, text="Each share is part of a key to everything.",
+                  style="Panel.TLabel", font=theme.FONT_BOLD,
+                  foreground=theme.WARN).pack(anchor="w")
+        ttk.Label(warn, style="PanelMuted.TLabel", wraplength=theme.px(490),
+                  justify="left",
+                  text="Store them apart - different people, different "
+                       "buildings. Anyone who gathers enough of them opens "
+                       "the vault without knowing the password. Shares are "
+                       "shown once and never saved by the app.").pack(
+            anchor="w", pady=(6, 0))
+
+        ttk.Label(body, text="Vault password", style="Muted.TLabel").pack(
+            anchor="w", pady=(14, 0))
+        self.password = PasswordEntry(body)
+        self.password.pack(fill="x", pady=(4, 0))
+        self.password.bind_return(lambda _e: self._create())
+
+        self.error = ttk.Label(body, text="", style="Danger.TLabel",
+                               wraplength=theme.px(510), justify="left")
+        self.error.pack(anchor="w", pady=(8, 0))
+
+        row = ttk.Frame(body)
+        row.pack(fill="x", side="bottom")
+        ttk.Button(row, text="Replace split" if existing else "Create shares",
+                   style="Accent.TButton", command=self._create).pack(side="right")
+        ttk.Button(row, text="Cancel", command=self._on_close).pack(
+            side="right", padx=(0, 8))
+        if existing:
+            ttk.Button(row, text="Revoke", style="Danger.TButton",
+                       command=self._revoke).pack(side="left")
+        self.password.focus_set()
+
+    def _sync(self):
+        total = int(self.count.get())
+        options = [str(n) for n in range(2, total + 1)]
+        self.threshold_box.configure(values=options)
+        if int(self.threshold.get() or 2) > total:
+            self.threshold.set(str(total))
+        self._describe()
+
+    def _describe(self):
+        try:
+            total, need = int(self.count.get()), int(self.threshold.get())
+        except ValueError:
+            return
+        self.summary.configure(
+            text="Any %d of the %d shares will open the vault. "
+                 "%d on its own tells an attacker nothing."
+                 % (need, total, need - 1) if need > 1 else "")
+
+    def _create(self):
+        if not self.password.get():
+            self.error.configure(text="Enter the vault password.")
+            return
+        self.result = {"action": "create",
+                       "threshold": int(self.threshold.get()),
+                       "count": int(self.count.get()),
+                       "password": self.password.get()}
+        self.destroy()
+
+    def _revoke(self):
+        self.result = {"action": "revoke"}
+        self.destroy()
+
+
+class RecoveryShowDialog(_Modal):
+    """Display freshly generated shares.  This is the only time they exist."""
+
+    def __init__(self, parent, shares: list, threshold: int,
+                 vault_name: str = ""):
+        super().__init__(parent, "Write these down", 640, 600, closable=False)
+        self.shares = list(shares)
+        body = ttk.Frame(self, padding=theme.px(26))
+        body.pack(fill="both", expand=True)
+
+        ttk.Label(body, text="Write these down now",
+                  style="H2.TLabel").pack(anchor="w")
+        ttk.Label(body, wraplength=theme.px(570), justify="left",
+                  style="Muted.TLabel",
+                  text="%d shares, any %d of which open %s. They are not "
+                       "stored anywhere and cannot be shown again. If you "
+                       "close this without keeping them, make a new split."
+                       % (len(shares), threshold, vault_name or "the vault")
+                  ).pack(anchor="w", pady=(6, 14))
+
+        box = tk.Text(body, height=theme.px(11), wrap="char",
+                      font=theme.FONT_MONO, bg=theme.SURFACE, fg=theme.TEXT,
+                      insertbackground=theme.ACCENT, relief="flat",
+                      borderwidth=0, padx=theme.px(12), pady=theme.px(10),
+                      selectbackground=theme.SELECT)
+        box.pack(fill="both", expand=True)
+        box.insert("1.0", self._as_text(vault_name, threshold))
+        box.configure(state="disabled")
+        self.box = box
+
+        ttk.Label(body, style="Warn.TLabel", wraplength=theme.px(570),
+                  justify="left",
+                  text="Keep them apart. Any %d together open the vault "
+                       "without the password." % threshold).pack(
+            anchor="w", pady=(12, 0))
+
+        self.confirmed = tk.BooleanVar(value=False)
+        ttk.Checkbutton(body, variable=self.confirmed,
+                        text="I have written these down or saved them somewhere "
+                             "safe", command=self._sync).pack(anchor="w",
+                                                              pady=(10, 0))
+
+        row = ttk.Frame(body)
+        row.pack(fill="x", side="bottom")
+        self.done = ttk.Button(row, text="Done", style="Accent.TButton",
+                               state="disabled", command=self._finish)
+        self.done.pack(side="right")
+        ttk.Button(row, text="Save to file...", style="Secondary.TButton",
+                   command=self._save).pack(side="right", padx=(0, 8))
+        ttk.Button(row, text="Copy all", style="Secondary.TButton",
+                   command=self._copy).pack(side="right", padx=(0, 8))
+
+    def _as_text(self, vault_name, threshold):
+        lines = ["Desktop Vault recovery shares",
+                 "Vault: %s" % (vault_name or "(unnamed)"),
+                 "Any %d of these %d shares will open it."
+                 % (threshold, len(self.shares)),
+                 "Created %s" % time.strftime("%d %B %Y"),
+                 ""]
+        for n, share in enumerate(self.shares, 1):
+            lines.append("Share %d of %d" % (n, len(self.shares)))
+            lines.append(share)
+            lines.append("")
+        lines.append("Keep these apart from each other and from the vault.")
+        return "\n".join(lines)
+
+    def _sync(self):
+        self.done.configure(state="normal" if self.confirmed.get()
+                            else "disabled")
+
+    def _copy(self):
+        self.clipboard_clear()
+        self.clipboard_append(self.box.get("1.0", "end-1c"))
+        self.confirmed.set(True)
+        self._sync()
+
+    def _save(self):
+        from tkinter import filedialog
+        path = filedialog.asksaveasfilename(
+            parent=self, title="Save recovery shares",
+            defaultextension=".txt", initialfile="recovery-shares.txt",
+            filetypes=[("Text file", "*.txt")])
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(self.box.get("1.0", "end-1c"))
+        except OSError as exc:
+            error(self, "Could not save", str(exc))
+            return
+        self.confirmed.set(True)
+        self._sync()
+        info(self, "Saved", "Recovery shares written to:\n%s" % path,
+             "This file is plain text and is not protected. Print it and "
+             "delete the file, or move it to somewhere offline.", kind="warn")
+
+    def _finish(self):
+        self.result = True
+        self.destroy()
+
+
+class RecoveryUnlockDialog(_Modal):
+    """Collect recovery shares to open a vault without its password."""
+
+    def __init__(self, parent, threshold: int, count: int):
+        super().__init__(parent, "Unlock with recovery shares", 620, 500)
+        body = ttk.Frame(self, padding=theme.px(26))
+        body.pack(fill="both", expand=True)
+
+        ttk.Label(body, text="Unlock with recovery shares",
+                  style="H2.TLabel").pack(anchor="w")
+        ttk.Label(body, wraplength=theme.px(550), justify="left",
+                  style="Muted.TLabel",
+                  text="Enter any %d of the %d shares, one per line. Dashes, "
+                       "spaces and capitalisation do not matter."
+                       % (threshold, count)).pack(anchor="w", pady=(6, 14))
+
+        self.text = tk.Text(body, height=theme.px(8), wrap="char",
+                            font=theme.FONT_MONO, bg=theme.SURFACE,
+                            fg=theme.TEXT, insertbackground=theme.ACCENT,
+                            relief="flat", borderwidth=0, padx=theme.px(12),
+                            pady=theme.px(10), selectbackground=theme.SELECT)
+        self.text.pack(fill="both", expand=True)
+        self.text.focus_set()
+
+        ttk.Label(body, style="Muted.TLabel", wraplength=theme.px(550),
+                  justify="left",
+                  text="After unlocking you will be asked to set a new "
+                       "password, since the old one is presumed lost.").pack(
+            anchor="w", pady=(12, 0))
+
+        self.error = ttk.Label(body, text="", style="Danger.TLabel",
+                               wraplength=theme.px(550), justify="left")
+        self.error.pack(anchor="w", pady=(8, 0))
+
+        row = ttk.Frame(body)
+        row.pack(fill="x", side="bottom")
+        ttk.Button(row, text="Unlock", style="Accent.TButton",
+                   command=self._accept).pack(side="right")
+        ttk.Button(row, text="Cancel", command=self._on_close).pack(
+            side="right", padx=(0, 8))
+
+    def show_error(self, message: str):
+        self.error.configure(text=message)
+
+    def _accept(self):
+        lines = [ln.strip() for ln in
+                 self.text.get("1.0", "end-1c").splitlines() if ln.strip()]
+        if not lines:
+            self.error.configure(text="Enter at least one share.")
+            return
+        self.result = lines
         self.destroy()
 
 

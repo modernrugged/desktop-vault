@@ -25,7 +25,7 @@ import shutil
 import time
 from typing import Iterable, Optional
 
-from . import crypto
+from . import crypto, shamir
 from .crypto import CryptoError
 
 # The app is called Desktop Vault, but these three identifiers are part of the
@@ -41,6 +41,13 @@ INDEX_NAME = "index.enc"
 INDEX_BAK = "index.enc.bak"
 DATA_DIR = "data"
 VAULT_SUFFIX = ".locker"
+
+# Recovery shares live in their own file. Adding a field to vault.json would
+# change the associated data the master key is wrapped under, which would make
+# every vault created before this feature refuse to open.
+RECOVERY_NAME = "recovery.enc"
+RECOVERY_MAGIC = "DesktopVaultRecovery"
+RECOVERY_INFO = b"desktopvault/recovery/v1"
 
 INDEX_INFO = b"secretvault/index/v1"
 INDEX_AAD = b"secretvault/index"
@@ -302,25 +309,26 @@ class Vault:
 
     # ---------------------------------------------------------------- unlock --
 
-    def unlock(self, password: str) -> None:
-        if self.is_unlocked:
-            return
+    def _header_aad(self) -> bytes:
+        return canonical({k: v for k, v in self.header.items()
+                          if k != "wrapped_master"})
+
+    def _unwrap_master(self, password: str) -> bytes:
+        """Recover the master key from the password without adopting it."""
         params = crypto.KdfParams.from_dict(self.header["kdf"])
         salt = bytes.fromhex(self.header["salt"])
-        aad_header = {k: v for k, v in self.header.items() if k != "wrapped_master"}
-
         kek = crypto.derive_kek(password, salt, params)
         try:
-            master = crypto.aead_decrypt(
-                bytes(kek),
-                bytes.fromhex(self.header["wrapped_master"]),
-                canonical(aad_header),
-            )
+            return crypto.aead_decrypt(
+                bytes(kek), bytes.fromhex(self.header["wrapped_master"]),
+                self._header_aad())
         except CryptoError:
             raise BadPassword("Incorrect password.")
         finally:
             crypto.wipe(kek)
 
+    def _adopt_master(self, master: bytes) -> None:
+        """Take a recovered master key into use and load the index."""
         self._master = bytearray(master)
         self._index_key = crypto.subkey(bytes(self._master), INDEX_INFO)
         try:
@@ -328,6 +336,11 @@ class Vault:
         except Exception:
             self.lock()
             raise
+
+    def unlock(self, password: str) -> None:
+        if self.is_unlocked:
+            return
+        self._adopt_master(self._unwrap_master(password))
 
     def lock(self) -> None:
         if self._dirty and self._index is not None:
@@ -767,22 +780,28 @@ class Vault:
                         recalibrate: bool = True) -> None:
         """Re-wrap the master key under a new password.
 
-        File data is untouched, so this is fast regardless of vault size.
+        File data is untouched, so this is fast regardless of vault size, and
+        any recovery shares keep working: they wrap the master key, not the
+        password.
         """
-        params = crypto.KdfParams.from_dict(self.header["kdf"])
-        salt = bytes.fromhex(self.header["salt"])
-        aad_header = {k: v for k, v in self.header.items() if k != "wrapped_master"}
-
-        kek = crypto.derive_kek(old_password, salt, params)
         try:
-            master = crypto.aead_decrypt(
-                bytes(kek), bytes.fromhex(self.header["wrapped_master"]),
-                canonical(aad_header))
-        except CryptoError:
+            master = self._unwrap_master(old_password)
+        except BadPassword:
             raise BadPassword("The current password is incorrect.")
-        finally:
-            crypto.wipe(kek)
+        self._rewrap_master(master, new_password, recalibrate)
 
+    def set_password(self, new_password: str, recalibrate: bool = True) -> None:
+        """Set a new password using the already-unlocked master key.
+
+        Used after unlocking with recovery shares, where by definition the old
+        password is not available.
+        """
+        self._require_unlocked()
+        self._rewrap_master(bytes(self._master), new_password, recalibrate)
+
+    def _rewrap_master(self, master: bytes, new_password: str,
+                       recalibrate: bool = True) -> None:
+        params = crypto.KdfParams.from_dict(self.header["kdf"])
         new_params = crypto.calibrate_kdf() if recalibrate else params
         new_salt = crypto.random_bytes(crypto.SALT_LEN)
         header = dict(self.header)
@@ -807,6 +826,125 @@ class Vault:
         shutil.copy2(hp, hp + ".bak")
         os.replace(tmp, hp)
         self.header = header
+
+    # -------------------------------------------------------- recovery shares --
+
+    def _recovery_path(self) -> str:
+        return os.path.join(self.path, RECOVERY_NAME)
+
+    def recovery_info(self) -> Optional[dict]:
+        """Read the recovery block's public metadata, locked or not."""
+        try:
+            with open(self._recovery_path(), "r", encoding="utf-8") as fh:
+                meta = json.load(fh)
+        except (OSError, ValueError):
+            return None
+        if meta.get("magic") != RECOVERY_MAGIC:
+            return None
+        return {"threshold": int(meta.get("threshold", 0)),
+                "shares": int(meta.get("shares", 0)),
+                "created": int(meta.get("created", 0))}
+
+    def has_recovery(self) -> bool:
+        return self.recovery_info() is not None
+
+    def create_recovery(self, password: str, threshold: int,
+                        count: int) -> list:
+        """Split a fresh recovery secret and wrap the master key under it.
+
+        Requires the password: holding an unlocked vault is not on its own a
+        reason to be able to mint a permanent second way in.  Returns the
+        share strings, which are never stored anywhere.
+        """
+        if not shamir.MIN_THRESHOLD <= threshold <= count:
+            raise VaultError("The threshold must be between %d and the number "
+                             "of shares." % shamir.MIN_THRESHOLD)
+        if count > shamir.MAX_SHARES:
+            raise VaultError("At most %d shares." % shamir.MAX_SHARES)
+
+        master = self._unwrap_master(password)
+        secret = bytearray(crypto.random_bytes(crypto.KEY_LEN))
+        kek = crypto.subkey(bytes(secret), RECOVERY_INFO)
+        try:
+            meta = {
+                "magic": RECOVERY_MAGIC,
+                "format": 1,
+                "vault_id": self.header["vault_id"],
+                "threshold": int(threshold),
+                "shares": int(count),
+                "created": now(),
+            }
+            meta["wrapped_master"] = crypto.aead_encrypt(
+                bytes(kek), master, canonical(meta)).hex()
+
+            target = self._recovery_path()
+            tmp = target + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(meta, fh, indent=2)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, target)
+
+            vault_id = bytes.fromhex(self.header["vault_id"])
+            return [shamir.encode_share(index, data, threshold, vault_id)
+                    for index, data in shamir.split(bytes(secret), threshold,
+                                                    count)]
+        finally:
+            crypto.wipe(secret)
+            crypto.wipe(kek)
+
+    def revoke_recovery(self) -> bool:
+        """Destroy the recovery block; the shares become worthless."""
+        path = self._recovery_path()
+        if not os.path.isfile(path):
+            return False
+        shred_file(path)
+        return not os.path.exists(path)
+
+    def unlock_with_shares(self, share_texts: list) -> None:
+        """Open the vault from recovery shares instead of the password."""
+        if self.is_unlocked:
+            return
+        try:
+            with open(self._recovery_path(), "r", encoding="utf-8") as fh:
+                meta = json.load(fh)
+        except (OSError, ValueError):
+            raise VaultError("This vault has no recovery shares.")
+        if meta.get("magic") != RECOVERY_MAGIC:
+            raise VaultError("The recovery block is damaged.")
+
+        vault_id = bytes.fromhex(self.header["vault_id"])
+        threshold = int(meta.get("threshold", 0))
+        points, seen = [], set()
+        for text in share_texts:
+            if not (text or "").strip():
+                continue
+            index, data, _t = shamir.decode_share(text, vault_id)
+            if index in seen:
+                raise shamir.ShareError(
+                    "the same share was entered twice (share %d)" % index)
+            seen.add(index)
+            points.append((index, data))
+
+        if len(points) < threshold:
+            raise shamir.ShareError(
+                "%d of %d shares entered - %d more needed."
+                % (len(points), threshold, threshold - len(points)))
+
+        secret = shamir.combine(points[:threshold])
+        kek = crypto.subkey(secret, RECOVERY_INFO)
+        aad = canonical({k: v for k, v in meta.items()
+                         if k != "wrapped_master"})
+        try:
+            master = crypto.aead_decrypt(
+                bytes(kek), bytes.fromhex(meta["wrapped_master"]), aad)
+        except CryptoError:
+            raise BadPassword(
+                "Those shares did not open the vault. They may be from a "
+                "different split, or one of them is wrong.")
+        finally:
+            crypto.wipe(kek)
+        self._adopt_master(master)
 
     # ----------------------------------------------------------------- stats --
 
