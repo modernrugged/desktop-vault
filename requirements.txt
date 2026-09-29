@@ -1,0 +1,4 @@
+# Desktop Vault runtime dependencies
+cryptography>=42.0        # AES-256-GCM, HKDF
+argon2-cffi>=23.1         # Argon2id password hashing
+tkinterdnd2>=0.4          # drag and drop from Explorer (optional)

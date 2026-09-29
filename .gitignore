@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Never commit a vault or anything decrypted out of one.
+*.locker/
+*.blob
+*.enc
+vault.json
+settings.json
