@@ -68,17 +68,17 @@ class TaskDialog(_Modal):
         self.error: Optional[BaseException] = None
         self._total = 0
 
-        body = ttk.Frame(self, padding=(24, 20, 24, 18))
+        body = ttk.Frame(self, padding=(theme.px(24), theme.px(20), theme.px(24), theme.px(18)))
         body.pack(fill="both", expand=True)
 
         self.title_label = ttk.Label(body, text=title, style="H2.TLabel")
         self.title_label.pack(anchor="w")
 
         self.detail = ttk.Label(body, text="Starting...", style="Muted.TLabel",
-                                wraplength=400)
+                                wraplength=theme.px(400))
         self.detail.pack(anchor="w", pady=(6, 14))
 
-        self.bar = ttk.Progressbar(body, mode="indeterminate", length=412)
+        self.bar = ttk.Progressbar(body, mode="indeterminate", length=theme.px(412))
         self.bar.pack(fill="x")
         self.bar.start(14)
 
@@ -159,7 +159,7 @@ class TextPrompt(_Modal):
     def __init__(self, parent, title: str, prompt: str, initial: str = "",
                  ok_text: str = "OK"):
         super().__init__(parent, title, 420, 190)
-        body = ttk.Frame(self, padding=24)
+        body = ttk.Frame(self, padding=theme.px(24))
         body.pack(fill="both", expand=True)
         ttk.Label(body, text=title, style="H2.TLabel").pack(anchor="w")
         ttk.Label(body, text=prompt, style="Muted.TLabel").pack(
@@ -192,13 +192,13 @@ class ConfirmDialog(_Modal):
     def __init__(self, parent, title: str, message: str, detail: str = "",
                  confirm_text: str = "Delete", danger: bool = True):
         super().__init__(parent, title, 460, 220 if detail else 180)
-        body = ttk.Frame(self, padding=24)
+        body = ttk.Frame(self, padding=theme.px(24))
         body.pack(fill="both", expand=True)
         ttk.Label(body, text=title, style="H2.TLabel").pack(anchor="w")
-        ttk.Label(body, text=message, wraplength=400,
+        ttk.Label(body, text=message, wraplength=theme.px(400),
                   style="TLabel").pack(anchor="w", pady=(10, 0))
         if detail:
-            ttk.Label(body, text=detail, wraplength=400,
+            ttk.Label(body, text=detail, wraplength=theme.px(400),
                       style="Muted.TLabel").pack(anchor="w", pady=(8, 0))
 
         row = ttk.Frame(body)
@@ -224,23 +224,23 @@ class ExternalOpenDialog(_Modal):
 
     def __init__(self, parent, name: str):
         super().__init__(parent, "Editing outside the vault", 560, 468)
-        body = ttk.Frame(self, padding=26)
+        body = ttk.Frame(self, padding=theme.px(26))
         body.pack(fill="both", expand=True)
 
         ttk.Label(body, text="Editing outside the vault",
                   style="H2.TLabel").pack(anchor="w")
-        ttk.Label(body, wraplength=500, justify="left", style="TLabel",
+        ttk.Label(body, wraplength=theme.px(500), justify="left", style="TLabel",
                   text="%s cannot be edited inside Desktop Vault. It has to be "
                        "decrypted to a temporary copy and handed to whichever "
                        "program Windows uses for it." % name).pack(
             anchor="w", pady=(10, 0))
 
-        warn = ttk.Frame(body, style="Panel.TFrame", padding=14)
+        warn = ttk.Frame(body, style="Panel.TFrame", padding=theme.px(14))
         warn.pack(fill="x", pady=(14, 0))
         ttk.Label(warn, text="Changes are NOT saved back automatically.",
                   style="Panel.TLabel", font=theme.FONT_BOLD,
                   foreground=theme.WARN).pack(anchor="w")
-        ttk.Label(warn, style="PanelMuted.TLabel", wraplength=480,
+        ttk.Label(warn, style="PanelMuted.TLabel", wraplength=theme.px(480),
                   justify="left",
                   text="Saving in the other program only writes to the "
                        "temporary copy. The change reaches the vault when you "
@@ -248,7 +248,7 @@ class ExternalOpenDialog(_Modal):
                        "or confirm the prompt when you lock.").pack(
             anchor="w", pady=(6, 0))
 
-        ttk.Label(body, style="Muted.TLabel", wraplength=500, justify="left",
+        ttk.Label(body, style="Muted.TLabel", wraplength=theme.px(500), justify="left",
                   text="Some programs - Office in particular - can defeat this "
                        "entirely by saving somewhere else, keeping the file "
                        "open, or writing after the vault has closed. If the "
@@ -286,17 +286,17 @@ class ConflictDialog(_Modal):
                  existing: dict, incoming: dict, remaining: int = 0):
         super().__init__(parent, "Name already in use", 560,
                          378 if remaining else 346)
-        body = ttk.Frame(self, padding=26)
+        body = ttk.Frame(self, padding=theme.px(26))
         body.pack(fill="both", expand=True)
 
         kind = "folder" if is_dir else "file"
         ttk.Label(body, text="Name already in use", style="H2.TLabel").pack(
             anchor="w")
-        ttk.Label(body, wraplength=500, justify="left", style="TLabel",
+        ttk.Label(body, wraplength=theme.px(500), justify="left", style="TLabel",
                   text="A %s called %s is already in %s."
                        % (kind, name, where)).pack(anchor="w", pady=(10, 14))
 
-        table = ttk.Frame(body, style="Panel.TFrame", padding=14)
+        table = ttk.Frame(body, style="Panel.TFrame", padding=theme.px(14))
         table.pack(fill="x")
         table.columnconfigure(0, weight=1, uniform="col")
         table.columnconfigure(1, weight=1, uniform="col")
@@ -313,7 +313,7 @@ class ConflictDialog(_Modal):
                       style="PanelMuted.TLabel").grid(row=2, column=column,
                                                       sticky="w", padx=(0, 16))
 
-        ttk.Label(body, style="Muted.TLabel", wraplength=500, justify="left",
+        ttk.Label(body, style="Muted.TLabel", wraplength=theme.px(500), justify="left",
                   text="Overwrite replaces what is stored now and shreds the "
                        "old encrypted data - there is no undo. Keep both adds "
                        "the new one alongside under a numbered name."
@@ -350,13 +350,13 @@ class SaveCloseDialog(_Modal):
 
     def __init__(self, parent, name: str):
         super().__init__(parent, "Unsaved changes", 460, 200)
-        body = ttk.Frame(self, padding=24)
+        body = ttk.Frame(self, padding=theme.px(24))
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="Unsaved changes", style="H2.TLabel").pack(anchor="w")
-        ttk.Label(body, wraplength=400, justify="left", style="TLabel",
+        ttk.Label(body, wraplength=theme.px(400), justify="left", style="TLabel",
                   text="%s has changes that are not in the vault yet."
                        % name).pack(anchor="w", pady=(10, 0))
-        ttk.Label(body, wraplength=400, justify="left", style="Muted.TLabel",
+        ttk.Label(body, wraplength=theme.px(400), justify="left", style="Muted.TLabel",
                   text="Saving re-encrypts it in place.").pack(anchor="w",
                                                                pady=(6, 0))
         row = ttk.Frame(body)
@@ -381,15 +381,15 @@ class MessageDialog(_Modal):
                  kind: str = "info", mono: bool = False):
         lines = 1 + message.count("\n") + (detail.count("\n") if detail else 0)
         super().__init__(parent, title, 520, min(560, 170 + 19 * lines))
-        body = ttk.Frame(self, padding=24)
+        body = ttk.Frame(self, padding=theme.px(24))
         body.pack(fill="both", expand=True)
         heading = {"error": "Danger.TLabel", "warn": "Warn.TLabel",
                    "ok": "Ok.TLabel"}.get(kind)
         ttk.Label(body, text=title, style="H2.TLabel").pack(anchor="w")
-        ttk.Label(body, text=message, wraplength=420, style="TLabel",
+        ttk.Label(body, text=message, wraplength=theme.px(420), style="TLabel",
                   justify="left").pack(anchor="w", pady=(10, 0))
         if detail:
-            label = ttk.Label(body, text=detail, wraplength=460,
+            label = ttk.Label(body, text=detail, wraplength=theme.px(460),
                               style=heading or "Muted.TLabel", justify="left")
             if mono:
                 label.configure(font=theme.FONT_MONO, foreground=theme.TEXT)
@@ -421,11 +421,11 @@ def ask_text(parent, title, prompt, initial="", ok_text="OK"):
 class ChangePasswordDialog(_Modal):
     def __init__(self, parent):
         super().__init__(parent, "Change password", 470, 400)
-        body = ttk.Frame(self, padding=26)
+        body = ttk.Frame(self, padding=theme.px(26))
         body.pack(fill="both", expand=True)
 
         ttk.Label(body, text="Change password", style="H2.TLabel").pack(anchor="w")
-        ttk.Label(body, style="Muted.TLabel", wraplength=410, justify="left",
+        ttk.Label(body, style="Muted.TLabel", wraplength=theme.px(410), justify="left",
                   text="Only the master key is re-wrapped, so this is instant "
                        "no matter how large the vault is. Your files are not "
                        "re-encrypted.").pack(anchor="w", pady=(6, 18))
@@ -440,7 +440,7 @@ class ChangePasswordDialog(_Modal):
         self.new = PasswordEntry(body, textvariable=self.new_var)
         self.new.pack(fill="x", pady=(4, 6))
 
-        self.meter = ttk.Progressbar(body, maximum=5, length=340,
+        self.meter = ttk.Progressbar(body, maximum=5, length=theme.px(340),
                                      style="S-.Horizontal.TProgressbar")
         self.meter.pack(fill="x")
         self.rating = ttk.Label(body, text=" ", style="Muted.TLabel")
@@ -450,7 +450,7 @@ class ChangePasswordDialog(_Modal):
         self.confirm = PasswordEntry(body)
         self.confirm.pack(fill="x", pady=(4, 10))
 
-        self.err = ttk.Label(body, text="", style="Danger.TLabel", wraplength=410)
+        self.err = ttk.Label(body, text="", style="Danger.TLabel", wraplength=theme.px(410))
         self.err.pack(anchor="w")
 
         row = ttk.Frame(body)
@@ -493,13 +493,13 @@ class SettingsDialog(_Modal):
     def __init__(self, parent, settings):
         super().__init__(parent, "Settings", 560, 560)
         self.settings = settings
-        body = ttk.Frame(self, padding=26)
+        body = ttk.Frame(self, padding=theme.px(26))
         body.pack(fill="both", expand=True)
 
         ttk.Label(body, text="Settings", style="H2.TLabel").pack(anchor="w")
         ttk.Label(body, text="Stored unencrypted in your user profile; contains "
                              "no passwords or key material.",
-                  style="Muted.TLabel", wraplength=500,
+                  style="Muted.TLabel", wraplength=theme.px(500),
                   justify="left").pack(anchor="w", pady=(6, 20))
 
         # ------------------------------------------------------- library --
@@ -513,7 +513,7 @@ class SettingsDialog(_Modal):
                    command=self._browse).pack(side="left", padx=(8, 0))
         ttk.Button(row, text="Default", style="Tool.TButton",
                    command=self._reset_library).pack(side="left", padx=(6, 0))
-        ttk.Label(body, style="Muted.TLabel", wraplength=500, justify="left",
+        ttk.Label(body, style="Muted.TLabel", wraplength=theme.px(500), justify="left",
                   text="New vaults are created here and every vault inside it "
                        "is listed on the home screen. Changing this does not "
                        "move any existing vault - it only changes where the "
@@ -527,7 +527,7 @@ class SettingsDialog(_Modal):
                              values=["0", "1", "2", "5", "10", "15", "30", "60"],
                              width=10)
         combo.pack(anchor="w", pady=(6, 2))
-        ttk.Label(body, style="Muted.TLabel", wraplength=500, justify="left",
+        ttk.Label(body, style="Muted.TLabel", wraplength=theme.px(500), justify="left",
                   text="Minutes of inactivity; 0 turns the idle timer off. The "
                        "lock is held while a document is still open in another "
                        "program, so an edit in progress is never destroyed."
@@ -554,7 +554,7 @@ class SettingsDialog(_Modal):
             anchor="w", pady=3)
 
         self.error = ttk.Label(body, text="", style="Danger.TLabel",
-                               wraplength=500, justify="left")
+                               wraplength=theme.px(500), justify="left")
         self.error.pack(anchor="w", pady=(10, 0))
 
         row2 = ttk.Frame(body)
@@ -620,16 +620,16 @@ class SaveBackDialog(_Modal):
     def __init__(self, parent, handles):
         super().__init__(parent, "Save changes back?", 500,
                          min(430, 230 + 22 * len(handles)))
-        body = ttk.Frame(self, padding=26)
+        body = ttk.Frame(self, padding=theme.px(26))
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="Save changes back?", style="H2.TLabel").pack(anchor="w")
-        ttk.Label(body, wraplength=440, justify="left", style="Muted.TLabel",
+        ttk.Label(body, wraplength=theme.px(440), justify="left", style="Muted.TLabel",
                   text="These files were changed since you opened them. Saving "
                        "re-encrypts them into the vault; discarding shreds the "
                        "working copy and keeps the stored version.").pack(
             anchor="w", pady=(6, 14))
 
-        listing = ttk.Frame(body, style="Surface.TFrame", padding=12)
+        listing = ttk.Frame(body, style="Surface.TFrame", padding=theme.px(12))
         listing.pack(fill="x")
         for handle in handles[:8]:
             ttk.Label(listing, text=handle.display_path or handle.name,

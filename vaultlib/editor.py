@@ -71,8 +71,8 @@ class EditorWindow(tk.Toplevel):
         name = self.path[-1]
         self.title("%s - Desktop Vault" % name)
         self.configure(bg=theme.BG)
-        self.geometry("880x640")
-        self.minsize(520, 360)
+        self.geometry("%dx%d" % (theme.px(880), theme.px(640)))
+        self.minsize(theme.px(520), theme.px(360))
         self.protocol("WM_DELETE_WINDOW", self.close)
         from . import shell
         shell.use_dark_titlebar(self)
@@ -86,7 +86,7 @@ class EditorWindow(tk.Toplevel):
         text, self.encoding, self.had_bom = decode(data)
         self.original = text
 
-        bar = ttk.Frame(self, style="Panel.TFrame", padding=(10, 7))
+        bar = ttk.Frame(self, style="Panel.TFrame", padding=(theme.px(10), theme.px(7)))
         bar.pack(fill="x")
         self.save_btn = ttk.Button(bar, text="Save to vault",
                                    style="Accent.TButton", command=self.save)

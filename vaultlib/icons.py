@@ -99,11 +99,19 @@ def _build(rows, palette, scale: int = 1) -> tk.PhotoImage:
 
 
 def load(_root: tk.Misc) -> dict:
-    """Build every icon.  Must be called after a Tk root exists."""
+    """Build every icon.  Must be called after a Tk root exists.
+
+    These are pixel bitmaps, so they can only be enlarged by a whole number.
+    The display scale is rounded to the nearest integer: 1x up to 125%, 2x at
+    150% and above, which keeps them in proportion with the scaled row height
+    without any blurry resampling.
+    """
+    from . import theme
+    step = max(1, int(round(theme.SCALE)))
     return {
-        "folder": _build(_FOLDER, _PALETTE),
-        "file": _build(_FILE, _PALETTE),
-        "lock": _build(_LOCK, _PALETTE),
-        "lock_big": _build(_LOCK, _PALETTE, scale=4),
-        "lock_app": _build(_LOCK, _PALETTE, scale=2),
+        "folder": _build(_FOLDER, _PALETTE, scale=step),
+        "file": _build(_FILE, _PALETTE, scale=step),
+        "lock": _build(_LOCK, _PALETTE, scale=step),
+        "lock_big": _build(_LOCK, _PALETTE, scale=4 * step),
+        "lock_app": _build(_LOCK, _PALETTE, scale=2 * step),
     }

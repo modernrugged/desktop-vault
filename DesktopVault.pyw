@@ -1,5 +1,9 @@
 """Desktop Vault - launcher.
 
+An offline encrypted vault for API keys, webhooks, secret keys, crypto
+recovery phrases and two-factor backup codes, alongside tax returns, passport
+scans, contracts and medical records.
+
 Run with pythonw (double-click the .pyw, or use the Desktop Vault.bat shortcut)
 so no console window appears.
 

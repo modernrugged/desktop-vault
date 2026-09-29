@@ -112,6 +112,37 @@ def documents_dir() -> str:
     return _known_folder(_DOCUMENTS)
 
 
+def enable_dpi_awareness() -> str:
+    """Tell Windows this process handles scaling itself.
+
+    Without it Windows reports 96 DPI, the app draws at 1x, and the result is
+    bitmap-stretched to fit a scaled display -- which is exactly why text
+    looked soft at 125% and above.  Must run before Tk opens its first window.
+
+    System-DPI-aware rather than per-monitor: Tk 8.6 cannot re-lay-out when a
+    window is dragged to a monitor with different scaling, so claiming
+    per-monitor awareness would render the window at the wrong size there.
+    System awareness is crisp on the main display and lets Windows fall back
+    to stretching in the rare mixed-DPI case.
+    """
+    if os.name != "nt":
+        return "not windows"
+    try:
+        import ctypes
+        # Windows 8.1+: 1 = system DPI aware.
+        if ctypes.windll.shcore.SetProcessDpiAwareness(1) == 0:
+            return "system"
+    except Exception:
+        pass
+    try:
+        import ctypes
+        if ctypes.windll.user32.SetProcessDPIAware():
+            return "system (legacy)"
+    except Exception:
+        pass
+    return "unavailable"
+
+
 def open_path(path: str) -> bool:
     """Show a file or folder with the desktop's default handler."""
     try:

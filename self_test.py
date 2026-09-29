@@ -939,6 +939,54 @@ def main() -> int:
                   shell.clear_folder_icon(deco)
                   and not os.path.exists(os.path.join(deco, "desktop.ini")))
 
+        section("Display scaling")
+        from vaultlib import theme as _theme
+        check("px() is identity at 100%",
+              _theme.px(100) == 100 if _theme.SCALE == 1.0 else True)
+
+        class FakeRoot:
+            def __init__(self, w, h):
+                self._w, self._h = w, h
+
+            def winfo_screenwidth(self):
+                return self._w
+
+            def winfo_screenheight(self):
+                return self._h
+
+            @staticmethod
+            def winfo_fpixels(_spec):
+                return 96.0
+
+        check("a 4K screen keeps 200% scaling",
+              _theme.fit_scale(FakeRoot(3840, 2160), 2.0) == 2.0)
+        check("1080p steps 200% down until the layout fits",
+              _theme.fit_scale(FakeRoot(1920, 1080), 2.0) == 1.5)
+        check("a small screen falls back to 100%",
+              _theme.fit_scale(FakeRoot(1280, 720), 2.0) == 1.0)
+        check("scaling is never pushed below 100%",
+              _theme.fit_scale(FakeRoot(800, 600), 1.0) == 1.0)
+
+        saved = _theme.SCALE
+        try:
+            _theme.SCALE = 1.5
+            check("px() returns whole scaled pixels",
+                  _theme.px(10) == 15 and _theme.px(8) == 12
+                  and isinstance(_theme.px(8), int))
+        finally:
+            _theme.SCALE = saved
+
+        os.environ["DESKTOPVAULT_UI_SCALE"] = "1.75"
+        try:
+            check("the manual scale override is honoured",
+                  _theme.detect_scale(FakeRoot(3840, 2160)) == 1.75)
+            os.environ["DESKTOPVAULT_UI_SCALE"] = "nonsense"
+            measured = _theme.detect_scale(FakeRoot(3840, 2160))
+            check("a bad override is ignored rather than crashing",
+                  isinstance(measured, float) and measured >= 1.0)
+        finally:
+            os.environ.pop("DESKTOPVAULT_UI_SCALE", None)
+
         section("Dialog call sites")
         for line in check_dialog_callsites():
             check(line, False)

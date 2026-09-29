@@ -76,11 +76,19 @@ def kind_of(node: dict) -> str:
 
 class App(_TkRoot):
     def __init__(self, initial_vault: str | None = None):
+        # Before Tk opens anything: otherwise Windows reports 96 DPI and the
+        # whole window gets bitmap-stretched on a scaled display.
+        shell.enable_dpi_awareness()
         super().__init__()
         self.title(APP_NAME)
-        self.minsize(940, 600)
         self.settings = Settings()
+        # theme.apply() measures the display and sets the scale, so everything
+        # that depends on theme.px() has to come after it.
         self.style = theme.apply(self)
+        # Clamped to the display: at 200% an unclamped minimum would be wider
+        # than the screen and the window could not be resized to fit it.
+        self.minsize(min(theme.px(940), self.winfo_screenwidth() - theme.px(40)),
+                     min(theme.px(600), self.winfo_screenheight() - theme.px(80)))
         self.icons = icons.load(self)
         # Prefer the multi-resolution .ico on Windows; fall back to the
         # bitmap drawn in icons.py so the app still has an identity anywhere.
@@ -357,7 +365,7 @@ class StartScreen(ttk.Frame):
         super().__init__(parent, style="TFrame")
         self.app = app
 
-        outer = ttk.Frame(self, style="TFrame", padding=(56, 34, 56, 24))
+        outer = ttk.Frame(self, style="TFrame", padding=(theme.px(56), theme.px(34), theme.px(56), theme.px(24)))
         outer.pack(fill="both", expand=True)
 
         head = ttk.Frame(outer, style="TFrame")
@@ -368,7 +376,8 @@ class StartScreen(ttk.Frame):
         titles.pack(side="left", anchor="w")
         ttk.Label(titles, text=APP_NAME, style="H1.TLabel").pack(anchor="w")
         ttk.Label(titles, style="Muted.TLabel",
-                  text="Your vaults. Each one opens with its own password."
+                  text="Keys, recovery phrases and documents you cannot "
+                       "replace. Each vault opens with its own password."
                   ).pack(anchor="w", pady=(2, 0))
 
         # fill="x" makes both buttons take the frame's width, which is set by
@@ -382,7 +391,7 @@ class StartScreen(ttk.Frame):
                    command=app.open_vault_dialog).pack(side="top", fill="x",
                                                        pady=(6, 0))
 
-        ttk.Frame(outer, height=22, style="TFrame").pack()
+        ttk.Frame(outer, height=theme.px(22), style="TFrame").pack()
 
         row = ttk.Frame(outer, style="TFrame")
         row.pack(fill="x")
@@ -392,12 +401,12 @@ class StartScreen(ttk.Frame):
         self.library_label.pack(side="right")
         self.library_label.bind("<Button-1>", lambda _e: self._open_library())
 
-        board = ttk.Frame(outer, style="Panel.TFrame", padding=6)
+        board = ttk.Frame(outer, style="Panel.TFrame", padding=theme.px(6))
         board.pack(fill="both", expand=True, pady=(8, 0))
         self.list_area = ttk.Frame(board, style="Panel.TFrame")
         self.list_area.pack(fill="both", expand=True)
 
-        ttk.Label(outer, style="Muted.TLabel", wraplength=760, justify="left",
+        ttk.Label(outer, style="Muted.TLabel", wraplength=theme.px(760), justify="left",
                   text="Everything stays on this computer. There is no "
                        "account, no cloud sync and no recovery key - a vault's "
                        "password is the only way into it."
@@ -421,12 +430,12 @@ class StartScreen(ttk.Frame):
 
         entries = self.entries()
         if not entries:
-            empty = ttk.Frame(self.list_area, style="Panel.TFrame", padding=34)
+            empty = ttk.Frame(self.list_area, style="Panel.TFrame", padding=theme.px(34))
             empty.pack(fill="both", expand=True)
             ttk.Label(empty, text="No vaults yet", style="Panel.TLabel",
                       font=theme.FONT_BOLD).pack()
             ttk.Label(empty, style="PanelMuted.TLabel", justify="center",
-                      wraplength=460,
+                      wraplength=theme.px(460),
                       text="Create one and it is kept in your library folder, "
                            "so the only thing you need on the desktop is this "
                            "app.").pack(pady=(6, 0))
@@ -436,7 +445,7 @@ class StartScreen(ttk.Frame):
             self._row(path, in_library)
 
     def _row(self, path, in_library):
-        row = ttk.Frame(self.list_area, style="Panel.TFrame", padding=(12, 10))
+        row = ttk.Frame(self.list_area, style="Panel.TFrame", padding=(theme.px(12), theme.px(10)))
         row.pack(fill="x", pady=1)
 
         name = os.path.basename(path.rstrip("\\/"))
@@ -550,14 +559,14 @@ class UnlockScreen(ttk.Frame):
         self.locked_until = 0.0
         self._busy = False
 
-        wrap = ttk.Frame(self, style="TFrame", padding=(50, 40))
+        wrap = ttk.Frame(self, style="TFrame", padding=(theme.px(50), theme.px(40)))
         wrap.place(relx=0.5, rely=0.45, anchor="center")
 
         ttk.Label(wrap, image=app.icons["lock_big"], style="TLabel").pack()
         ttk.Label(wrap, text=vault.name, style="H2.TLabel").pack(pady=(14, 2))
         ttk.Label(wrap, text=vault.path, style="Muted.TLabel").pack()
 
-        ttk.Frame(wrap, height=26, style="TFrame").pack()
+        ttk.Frame(wrap, height=theme.px(26), style="TFrame").pack()
 
         self.password = PasswordEntry(wrap, width=34)
         self.password.pack()
@@ -565,10 +574,10 @@ class UnlockScreen(ttk.Frame):
         self.password.focus_set()
 
         self.status = ttk.Label(wrap, text="", style="Danger.TLabel",
-                                wraplength=380, justify="center")
+                                wraplength=theme.px(380), justify="center")
         self.status.pack(pady=(12, 0))
 
-        self.bar = ttk.Progressbar(wrap, mode="indeterminate", length=300)
+        self.bar = ttk.Progressbar(wrap, mode="indeterminate", length=theme.px(300))
 
         buttons = ttk.Frame(wrap, style="TFrame")
         buttons.pack(pady=(18, 0))
@@ -665,11 +674,11 @@ class CreateScreen(ttk.Frame):
         super().__init__(parent, style="TFrame")
         self.app = app
 
-        wrap = ttk.Frame(self, style="TFrame", padding=(50, 30))
+        wrap = ttk.Frame(self, style="TFrame", padding=(theme.px(50), theme.px(30)))
         wrap.place(relx=0.5, rely=0.5, anchor="center")
 
         ttk.Label(wrap, text="Create a new vault", style="H1.TLabel").pack(anchor="w")
-        ttk.Label(wrap, style="Muted.TLabel", wraplength=520, justify="left",
+        ttk.Label(wrap, style="Muted.TLabel", wraplength=theme.px(520), justify="left",
                   text="A vault is a folder on your disk. Everything inside it "
                        "is encrypted with a key derived from your password "
                        "alone.").pack(anchor="w", pady=(4, 24))
@@ -709,11 +718,11 @@ class CreateScreen(ttk.Frame):
         self.password = PasswordEntry(wrap, textvariable=self.pw_var, width=44)
         self.password.pack(fill="x", pady=(4, 6))
 
-        self.meter = ttk.Progressbar(wrap, maximum=5, length=400,
+        self.meter = ttk.Progressbar(wrap, maximum=5, length=theme.px(400),
                                      style="S-.Horizontal.TProgressbar")
         self.meter.pack(fill="x")
         self.rating = ttk.Label(wrap, text=" ", style="Muted.TLabel",
-                                wraplength=520, justify="left")
+                                wraplength=theme.px(520), justify="left")
         self.rating.pack(anchor="w", pady=(4, 14))
 
         ttk.Label(wrap, text="Confirm password", style="Muted.TLabel").pack(anchor="w")
@@ -721,11 +730,11 @@ class CreateScreen(ttk.Frame):
         self.confirm.pack(fill="x", pady=(4, 18))
         self.confirm.bind_return(lambda _e: self.create())
 
-        warning = ttk.Frame(wrap, style="Panel.TFrame", padding=14)
+        warning = ttk.Frame(wrap, style="Panel.TFrame", padding=theme.px(14))
         warning.pack(fill="x")
         ttk.Label(warning, text="There is no way to recover this password.",
                   style="Panel.TLabel", font=theme.FONT_BOLD).pack(anchor="w")
-        ttk.Label(warning, style="PanelMuted.TLabel", wraplength=500,
+        ttk.Label(warning, style="PanelMuted.TLabel", wraplength=theme.px(500),
                   justify="left",
                   text="No reset link, no backup key, no support line. If you "
                        "forget it, the files in this vault are gone for good. "
@@ -738,7 +747,7 @@ class CreateScreen(ttk.Frame):
                              "password").pack(anchor="w")
 
         self.error = ttk.Label(wrap, text="", style="Danger.TLabel",
-                               wraplength=520, justify="left")
+                               wraplength=theme.px(520), justify="left")
         self.error.pack(anchor="w", pady=(10, 0))
 
         buttons = ttk.Frame(wrap, style="TFrame")
@@ -877,7 +886,7 @@ class BrowserScreen(ttk.Frame):
     # ------------------------------------------------------------ chrome --
 
     def _build_toolbar(self):
-        bar = ttk.Frame(self, style="Panel.TFrame", padding=(10, 8))
+        bar = ttk.Frame(self, style="Panel.TFrame", padding=(theme.px(10), theme.px(8)))
         bar.pack(fill="x")
 
         def tool(text, command, width=None):
@@ -915,7 +924,7 @@ class BrowserScreen(ttk.Frame):
     def _build_breadcrumb(self):
         # Search sits on this row rather than in the toolbar: the toolbar runs
         # out of width on a narrow window and squeezes the entry shut.
-        row = ttk.Frame(self, style="Panel.TFrame", padding=(12, 4))
+        row = ttk.Frame(self, style="Panel.TFrame", padding=(theme.px(12), theme.px(4)))
         row.pack(fill="x")
 
         self.search_var = tk.StringVar()
@@ -937,7 +946,7 @@ class BrowserScreen(ttk.Frame):
         body = ttk.Frame(self, style="TFrame")
         body.pack(fill="both", expand=True)
 
-        side = ttk.Frame(body, style="Panel.TFrame", width=250)
+        side = ttk.Frame(body, style="Panel.TFrame", width=theme.px(250))
         side.pack(side="left", fill="y")
         side.pack_propagate(False)
         ttk.Label(side, text="FOLDERS", style="PanelMuted.TLabel").pack(
@@ -964,10 +973,11 @@ class BrowserScreen(ttk.Frame):
         self.listing = ttk.Treeview(
             right, columns=[c[0] for c in self.COLUMNS],
             show="tree headings", selectmode="extended")
-        self.listing.column("#0", width=30, stretch=False, anchor="center")
+        self.listing.column("#0", width=theme.px(30), stretch=False,
+                            anchor="center")
         self.listing.heading("#0", text="")
         for key, label, width, anchor in self.COLUMNS:
-            self.listing.column(key, width=width, anchor=anchor,
+            self.listing.column(key, width=theme.px(width), anchor=anchor,
                                 stretch=(key == "name"))
             self.listing.heading(key, text=label, anchor=anchor,
                                  command=lambda k=key: self.sort_by(k))
@@ -990,7 +1000,7 @@ class BrowserScreen(ttk.Frame):
                                    text="Drop to add to this vault")
 
     def _build_status(self):
-        bar = ttk.Frame(self, style="Panel.TFrame", padding=(12, 6))
+        bar = ttk.Frame(self, style="Panel.TFrame", padding=(theme.px(12), theme.px(6)))
         bar.pack(fill="x", side="bottom")
         self.status_left = ttk.Label(bar, text="", style="PanelMuted.TLabel")
         self.status_left.pack(side="left")

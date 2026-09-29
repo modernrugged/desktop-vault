@@ -1,13 +1,40 @@
 # Desktop Vault
 
-A desktop application for storing documents, files and folders inside an
-encrypted container on your own machine. Everything is protected by a single
-password. There is no account, no cloud, no telemetry and **no recovery path** —
-without the password the contents are unreadable, by you or by anyone else.
+**An offline, encrypted vault for the secrets that unlock everything else.**
+
+API keys, webhook URLs, secret keys and access tokens. Crypto wallet recovery
+phrases and seed words. Two-factor backup codes. And the documents you cannot
+replace if they leak — tax returns, passport and ID scans, contracts, medical
+records, wills, property deeds.
+
+These are the things that end up scattered across a Notes app, a spreadsheet
+called `keys.xlsx`, a screenshot in Downloads, or a folder synced to somebody
+else's cloud. Desktop Vault gives them one encrypted place on your own machine,
+protected by a single password.
+
+There is no account, no cloud, no telemetry and **no recovery path** — without
+the password the contents are unreadable, by you or by anyone else.
 
 ![the vault library](docs/library.png)
 
 ![browsing a vault](docs/browser.png)
+
+---
+
+## What it's for
+
+| | |
+| --- | --- |
+| **Developer secrets** | API keys, webhook URLs, signing keys, `.env` files, SSH keys, service-account JSON, database credentials |
+| **Crypto** | Recovery phrases, seed words, private keys, exchange backup codes |
+| **Account recovery** | Two-factor backup codes, recovery kits, password-manager emergency sheets |
+| **Identity** | Passport and driving licence scans, birth certificates, visas, national ID |
+| **Financial and legal** | Tax returns, bank statements, contracts, wills, property deeds, insurance policies |
+| **Medical** | Test results, prescriptions, records, insurance paperwork |
+
+Short secrets — keys, phrases, codes — are best kept as text files and opened
+with **Edit**, which decrypts them into memory only and never writes plaintext
+to disk. Scans and documents go in as files.
 
 ---
 
