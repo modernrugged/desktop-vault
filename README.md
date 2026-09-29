@@ -40,7 +40,7 @@ to disk. Scans and documents go in as files.
 
 ## Download
 
-**[Download Desktop Vault.exe](https://github.com/modernrugged/desktop-vault/releases/latest)**
+**[Download the latest release](https://github.com/modernrugged/desktop-vault/releases/latest)**
 — one file, about 16 MB, nothing to install. Python is not needed.
 
 Windows will show **"Windows protected your PC"** the first time you run it.
@@ -49,14 +49,14 @@ file has no code-signing certificate, which costs a few hundred a year. Click
 **More info**, then **Run anyway**. Verify the download first if you like:
 
 ```powershell
-Get-FileHash "$HOME\Downloads\Desktop Vault.exe" -Algorithm SHA256
+Get-FileHash "$HOME\Downloads\DesktopVault-1.2.0-win64.exe" -Algorithm SHA256
 ```
 
 and compare it with the SHA-256 printed on the release page. If you would
 rather not run an unsigned binary at all — a fair position for a tool that
 holds your keys — run it from source instead; it is the same code.
 
-Stuck? `Desktop Vault.exe --diagnose` writes a short report saying what loaded.
+Stuck? Run it with `--diagnose` and it writes a short report saying what loaded.
 
 ---
 
