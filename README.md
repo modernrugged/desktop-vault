@@ -38,6 +38,28 @@ to disk. Scans and documents go in as files.
 
 ---
 
+## Download
+
+**[Download Desktop Vault.exe](https://github.com/modernrugged/desktop-vault/releases/latest)**
+— one file, about 16 MB, nothing to install. Python is not needed.
+
+Windows will show **"Windows protected your PC"** the first time you run it.
+That is SmartScreen reacting to an unsigned download, not a virus warning: the
+file has no code-signing certificate, which costs a few hundred a year. Click
+**More info**, then **Run anyway**. Verify the download first if you like:
+
+```powershell
+Get-FileHash "$HOME\Downloads\Desktop Vault.exe" -Algorithm SHA256
+```
+
+and compare it with the SHA-256 printed on the release page. If you would
+rather not run an unsigned binary at all — a fair position for a tool that
+holds your keys — run it from source instead; it is the same code.
+
+Stuck? `Desktop Vault.exe --diagnose` writes a short report saying what loaded.
+
+---
+
 ## Requirements
 
 | | |
@@ -55,9 +77,10 @@ python -m pip install -r requirements.txt
 
 Then double-click **`Desktop Vault.bat`** (or `DesktopVault.pyw`).
 
+`build_exe.bat` packages everything into `dist\Desktop Vault.exe` if you want
+to build the standalone version yourself.
+
 `Create desktop shortcut.bat` puts a properly-iconed shortcut on your desktop.
-`build_exe.bat` packages everything into a single `dist\Desktop Vault.exe` that
-runs on machines without Python.
 
 Requires Python 3.9+ with Tkinter (included in the standard python.org
 installer for Windows).

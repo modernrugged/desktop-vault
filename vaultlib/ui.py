@@ -407,10 +407,11 @@ class StartScreen(ttk.Frame):
         self.list_area = ttk.Frame(board, style="Panel.TFrame")
         self.list_area.pack(fill="both", expand=True)
 
-        ttk.Label(outer, style="Muted.TLabel", wraplength=theme.px(760), justify="left",
-                  text="Everything stays on this computer. There is no "
-                       "account, no cloud sync and no recovery key - a vault's "
-                       "password is the only way into it."
+        ttk.Label(outer, style="Muted.TLabel", wraplength=theme.px(760),
+                  justify="left",
+                  text="Everything stays on this computer. There is no account "
+                       "and no cloud sync. A vault opens with its password, or "
+                       "with recovery shares if you chose to create them."
                   ).pack(anchor="w", pady=(16, 0))
 
         self.reload()

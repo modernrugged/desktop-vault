@@ -2,3 +2,6 @@
 *.bat text eol=crlf
 *.png binary
 *.ico binary
+
+# build artefacts
+version_info.txt export-ignore
